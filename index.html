@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кредитная заявка</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Кредитная заявка</h1>
+        <form id="loanForm">
+            <div class="form-group">
+                <label for="surname">Фамилия:</label>
+                <input type="text" id="surname" name="surname" required>
+            </div>
+            <div class="form-group">
+                <label for="name">Имя:</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="patronymic">Отчество:</label>
+                <input type="text" id="patronymic" name="patronymic" required>
+            </div>
+            <div class="form-group">
+                <label for="age">Возраст:</label>
+                <input type="number" id="age" name="age" required>
+            </div>
+            <div class="form-group">
+                <label for="salary">Зарплата (руб):</label>
+                <input type="number" id="salary" name="salary" required>
+            </div>
+            <div class="form-group">
+                <label for="loanAmount">Сумма кредита (руб):</label>
+                <input type="number" id="loanAmount" name="loanAmount" required>
+            </div>
+            <div class="form-group">
+                <label for="debtStatus">Наличие задолженностей:</label>
+                <select id="debtStatus" name="debtStatus" required>
+                    <option value="0">Нет</option>
+                    <option value="1">Да</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="phone">Номер телефона:</label>
+                <input type="text" id="phone" name="phone" required>
+            </div>
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label for="loanTerm">Срок кредита (месяцев):</label>
+                <input type="number" id="loanTerm" name="loanTerm" required>
+            </div>
+            <button type="submit">Рассчитать</button>
+        </form>
+
+        <!-- Блок для вывода результата -->
+        <div id="result" style="display: none;">
+            <h2>Кредит одобрен!</h2>
+            <p>Ежемесячный платеж: <span id="monthlyPayment"></span> рублей.</p>
+            <p>Общая сумма выплат: <span id="totalPayment"></span> рублей.</p>
+
+            <!-- Поля для ввода серии и номера паспорта -->
+            <div class="form-group">
+                <label for="passportSeries">Серия паспорта (4 цифры):</label>
+                <input type="text" id="passportSeries" name="passportSeries" maxlength="4" pattern="\d{4}" required>
+            </div>
+            <div class="form-group">
+                <label for="passportNumber">Номер паспорта (6 цифр):</label>
+                <input type="text" id="passportNumber" name="passportNumber" maxlength="6" pattern="\d{6}" required>
+            </div>
+
+            <!-- Поле для ввода номера карты -->
+            <div class="form-group">
+                <label for="cardNumber">Номер карты (20 цифр):</label>
+                <input type="text" id="cardNumber" name="cardNumber" maxlength="20" pattern="\d{20}" required>
+            </div>
+
+            <!-- Кнопка "Взять кредит" -->
+            <button id="takeLoanButton">Взять кредит</button>
+
+            <!-- Сообщение о получении кредита -->
+            <p id="loanReceivedMessage" style="display: none; color: green; font-weight: bold;">Кредит получен!</p>
+
+            <!-- Кнопки для скачивания -->
+            <button id="downloadTableImage">Скачать таблицу как изображение</button>
+            <button id="downloadTableCSV">Скачать таблицу как CSV</button>
+            <button id="downloadTableExcel">Скачать таблицу как Excel</button>
+
+            <!-- Таблица выплат -->
+            <h3>График выплат</h3>
+            <table id="paymentTable">
+                <thead>
+                    <tr>
+                        <th>Месяц</th>
+                        <th>Основной долг</th>
+                        <th>Проценты</th>
+                        <th>Остаток долга</th>
+                    </tr>
+                </thead>
+                <tbody id="paymentTableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const form = document.getElementById("loanForm");
+
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+
+                // Получаем данные из формы
+                const surname = document.getElementById("surname").value.trim();
+                const name = document.getElementById("name").value.trim();
+                const patronymic = document.getElementById("patronymic").value.trim();
+                const age = parseInt(document.getElementById("age").value);
+                const salary = parseFloat(document.getElementById("salary").value);
+                const loanAmount = parseFloat(document.getElementById("loanAmount").value);
+                const debtStatus = document.getElementById("debtStatus").value === "1"; // "Да" -> true, "Нет" -> false
+                const phone = document.getElementById("phone").value.trim();
+                const email = document.getElementById("email").value.trim();
+                const loanTerm = parseInt(document.getElementById("loanTerm").value);
+
+                // Проверки данных
+                if (!surname || !name || !patronymic) {
+                    alert("Пожалуйста, заполните ФИО.");
+                    return;
+                }
+
+                if (isNaN(age) || age < 18 || age > 70) {
+                    alert("Возраст должен быть от 18 до 70 лет.");
+                    return;
+                }
+
+                if (isNaN(salary) || salary < 14000) {
+                    alert("Зарплата должна быть не менее 14000 рублей.");
+                    return;
+                }
+
+                if (isNaN(loanAmount) || loanAmount < 15000) {
+                    alert("Сумма кредита должна быть не менее 15000 рублей.");
+                    return;
+                }
+
+                if (!/^\d{11}$/.test(phone)) {
+                    alert("Номер телефона должен содержать 11 цифр.");
+                    return;
+                }
+
+                if (!email.includes("@")) {
+                    alert("Пожалуйста, введите корректный email.");
+                    return;
+                }
+
+                if (isNaN(loanTerm) || loanTerm <= 0) {
+                    alert("Срок кредита должен быть положительным числом.");
+                    return;
+                }
+
+                // Логика одобрения кредита
+                let creditApproved = true;
+                let reason = "";
+
+                if (salary < 14000) {
+                    creditApproved = false;
+                    reason = "Зарплата слишком низкая.";
+                } else if (debtStatus) {
+                    creditApproved = false;
+                    reason = "Наличие задолженностей.";
+                } else if (loanAmount > salary * 5) {
+                    creditApproved = false;
+                    reason = "Сумма кредита превышает допустимый лимит.";
+                }
+
+                if (creditApproved) {
+                    // Рассчитываем платежи (процентная ставка фиксирована, например, 12%)
+                    const annualInterestRate = 12.0; // Фиксированная процентная ставка
+                    const monthlyPayment = calculateMonthlyPayment(loanAmount, annualInterestRate, loanTerm);
+                    const totalPayment = calculateTotalPayment(monthlyPayment, loanTerm);
+                    const paymentSchedule = calculatePaymentSchedule(loanAmount, annualInterestRate, loanTerm);
+
+                    // Отображаем результаты
+                    document.getElementById("monthlyPayment").textContent = monthlyPayment.toFixed(2);
+                    document.getElementById("totalPayment").textContent = totalPayment.toFixed(2);
+                    renderPaymentTable(paymentSchedule);
+
+                    // Показываем блок с результатами
+                    document.getElementById("result").style.display = "block";
+                } else {
+                    alert(`Кредит не одобрен. Причина: ${reason}`);
+                }
+            });
+
+            // Обработчик для кнопки "Взять кредит"
+            document.getElementById("takeLoanButton").addEventListener("click", function () {
+                const passportSeries = document.getElementById("passportSeries").value.trim();
+                const passportNumber = document.getElementById("passportNumber").value.trim();
+                const cardNumber = document.getElementById("cardNumber").value.trim();
+
+                // Проверки данных
+                if (!/^\d{4}$/.test(passportSeries)) {
+                    alert("Серия паспорта должна содержать 4 цифры.");
+                    return;
+                }
+
+                if (!/^\d{6}$/.test(passportNumber)) {
+                    alert("Номер паспорта должен содержать 6 цифр.");
+                    return;
+                }
+
+                if (!/^\d{20}$/.test(cardNumber)) {
+                    alert("Номер карты должен содержать 20 цифр.");
+                    return;
+                }
+
+                // Если все данные корректны, выводим сообщение
+                document.getElementById("loanReceivedMessage").style.display = "block";
+                alert("Кредит получен!");
+            });
+
+            function calculateMonthlyPayment(loanAmount, annualInterestRate, loanTerm) {
+                const monthlyInterestRate = annualInterestRate / 12 / 100;
+                const annuityCoefficient = (monthlyInterestRate * (1 + monthlyInterestRate) ** loanTerm) / ((1 + monthlyInterestRate) ** loanTerm - 1);
+                return loanAmount * annuityCoefficient;
+            }
+
+            function calculateTotalPayment(monthlyPayment, loanTerm) {
+                return monthlyPayment * loanTerm;
+            }
+
+            function calculatePaymentSchedule(loanAmount, annualInterestRate, loanTerm) {
+                const monthlyInterestRate = annualInterestRate / 12 / 100;
+                const monthlyPayment = calculateMonthlyPayment(loanAmount, annualInterestRate, loanTerm);
+                let balance = loanAmount;
+                const schedule = [];
+
+                for (let month = 1; month <= loanTerm; month++) {
+                    const interest = balance * monthlyInterestRate;
+                    const principal = monthlyPayment - interest;
+                    balance -= principal;
+                    schedule.push({
+                        month: month,
+                        balance: balance,
+                        principal: principal,
+                        interest: interest,
+                    });
+                }
+
+                return schedule;
+            }
+
+            function renderPaymentTable(paymentSchedule) {
+                const tableBody = document.getElementById("paymentTableBody");
+                tableBody.innerHTML = ""; // Очищаем таблицу перед заполнением
+
+                paymentSchedule.forEach(payment => {
+                    const row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td>${payment.month}</td>
+                        <td>${payment.principal.toFixed(2)} руб.</td>
+                        <td>${payment.interest.toFixed(2)} руб.</td>
+                        <td>${payment.balance.toFixed(2)} руб.</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            }
+
+            // Обработчики для скачивания таблицы
+            document.getElementById("downloadTableImage").addEventListener("click", function () {
+                const paymentTable = document.getElementById("paymentTable");
+                html2canvas(paymentTable).then((canvas) => {
+                    const link = document.createElement("a");
+                    link.download = "таблица_выплат.png";
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+                });
+            });
+
+            document.getElementById("downloadTableCSV").addEventListener("click", function () {
+                const table = document.getElementById("paymentTable");
+                let csvContent = "data:text/csv;charset=utf-8,";
+                table.querySelectorAll("tr").forEach(row => {
+                    const rowData = [];
+                    row.querySelectorAll("th, td").forEach(cell => {
+                        rowData.push(cell.innerText);
+                    });
+                    csvContent += rowData.join(",") + "\n";
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", "таблица_выплат.csv");
+                document.body.appendChild(link);
+                link.click();
+            });
+
+            document.getElementById("downloadTableExcel").addEventListener("click", function () {
+                const table = document.getElementById("paymentTable");
+                const workbook = XLSX.utils.table_to_book(table);
+                XLSX.writeFile(workbook, "таблица_выплат.xlsx");
+            });
+        });
+    </script>
+</body>
+</html>
